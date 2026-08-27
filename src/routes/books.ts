@@ -1,0 +1,98 @@
+import { Hono } from "hono";
+import { z } from "zod";
+import { prisma } from "../lib/prisma.js";
+import { requireAdmin } from "../middleware/require-admin.js";
+
+export const booksRoutes = new Hono();
+
+// ── PUBLIC ──────────────────────────────────────────────
+
+// GET /books — storefront catalog, active books only
+booksRoutes.get("/", async (c) => {
+  const books = await prisma.book.findMany({
+    where: { status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
+  });
+  return c.json({ books });
+});
+
+// GET /books/:slug — single book detail page
+booksRoutes.get("/:slug", async (c) => {
+  const slug = c.req.param("slug")!;
+  const book = await prisma.book.findUnique({ where: { slug } });
+
+  if (!book || book.status !== "ACTIVE") {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  // Never expose the storage path for the ebook file publicly —
+  // it only becomes a real, temporary link after payment is verified.
+  const { ebookFileUrl, ...publicBook } = book;
+  return c.json({ book: publicBook });
+});
+
+// ── ADMIN ───────────────────────────────────────────────
+
+const bookInputSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  description: z.string().min(1),
+  author: z.string().optional(),
+  format: z.enum(["EBOOK", "PHYSICAL"]),
+  priceKobo: z.number().int().positive(),
+  coverImageUrl: z.string().url().optional(),
+  ebookFileUrl: z.string().optional(), // storage path, e.g. "my-book.pdf"
+  stockCount: z.number().int().nonnegative().optional(),
+});
+
+// GET /books/admin/all — includes deactivated books, for the dashboard
+booksRoutes.get("/admin/all", requireAdmin, async (c) => {
+  const books = await prisma.book.findMany({ orderBy: { createdAt: "desc" } });
+  return c.json({ books });
+});
+
+// POST /books — create a new book
+booksRoutes.post("/", requireAdmin, async (c) => {
+  const parsed = bookInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.flatten() }, 400);
+  }
+
+  const book = await prisma.book.create({ data: parsed.data });
+  return c.json({ book }, 201);
+});
+
+// PATCH /books/:id — edit price, description, cover, etc.
+booksRoutes.patch("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const parsed = bookInputSchema.partial().safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.flatten() }, 400);
+  }
+
+  const book = await prisma.book.update({
+    where: { id },
+    data: parsed.data,
+  });
+  return c.json({ book });
+});
+
+// PATCH /books/:id/deactivate — soft-delete, matches the agreement's
+// "remove or deactivate products" requirement without losing order history
+booksRoutes.patch("/:id/deactivate", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const book = await prisma.book.update({
+    where: { id },
+    data: { status: "DEACTIVATED" },
+  });
+  return c.json({ book });
+});
+
+booksRoutes.patch("/:id/activate", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const book = await prisma.book.update({
+    where: { id },
+    data: { status: "ACTIVE" },
+  });
+  return c.json({ book });
+});

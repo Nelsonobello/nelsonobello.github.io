@@ -1,0 +1,188 @@
+// ─────────────────────────────────────────────────────────
+// NELBELL Tutorial Centre / Oshomhoekha Creative Publishing
+// Prisma schema — Node + Hono backend, PostgreSQL (Supabase)
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN (single account — no signup, seeded directly)
+// ─────────────────────────────────────────────
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// BOOKSTORE / E-COMMERCE
+// ─────────────────────────────────────────────
+
+enum BookFormat {
+  EBOOK
+  PHYSICAL
+}
+
+enum BookStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
+model Book {
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  description   String
+  author        String     @default("Nelson O. Bello")
+  format        BookFormat
+  priceKobo     Int
+  coverImageUrl String?
+  ebookFileUrl  String?    // Supabase Storage path, e.g. "ebooks/book-slug.pdf" — NOT a public URL
+  stockCount    Int?
+  status        BookStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  orderItems    OrderItem[]
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  PAYSTACK
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  FULFILLED
+  CANCELLED
+}
+
+model Customer {
+  id              String   @id @default(cuid())
+  fullName        String
+  email           String
+  phone           String
+  deliveryAddress String?
+  createdAt       DateTime @default(now())
+
+  orders          Order[]
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  customerId      String
+  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  status          OrderStatus   @default(PENDING_PAYMENT)
+  totalKobo       Int
+
+  bankTransferRef     String?
+
+  paystackReference   String?   @unique
+  paystackAuthUrl     String?
+  paystackVerifiedAt  DateTime?
+
+  paidAt          DateTime?
+  fulfilledAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id            String @id @default(cuid())
+  order         Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  book          Book   @relation(fields: [bookId], references: [id])
+  bookId        String
+  quantity      Int    @default(1)
+  unitPriceKobo Int
+
+  downloadToken   String?
+  downloadExpires DateTime?
+}
+
+// ─────────────────────────────────────────────
+// CBT (COMPUTER-BASED TEST) PRACTICE
+// ─────────────────────────────────────────────
+
+model CBTSubject {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  questions CBTQuestion[]
+}
+
+model CBTQuestion {
+  id            String     @id @default(cuid())
+  subject       CBTSubject @relation(fields: [subjectId], references: [id])
+  subjectId     String
+  questionText  String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctOption String
+  explanation   String?
+  createdAt     DateTime   @default(now())
+}
+
+model CBTPracticeSession {
+  id           String    @id @default(cuid())
+  email        String?
+  subjectId    String
+  totalAsked   Int
+  totalCorrect Int
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+}
+
+// ─────────────────────────────────────────────
+// LEAD CAPTURE
+// ─────────────────────────────────────────────
+
+enum InquiryType {
+  PUBLISHING_SERVICES
+  COACHING_CONSULTING
+  GENERAL_CONTACT
+}
+
+model Inquiry {
+  id        String      @id @default(cuid())
+  type      InquiryType
+  fullName  String
+  email     String
+  phone     String?
+  message   String
+  createdAt DateTime    @default(now())
+  handled   Boolean     @default(false)
+}
+
+// ─────────────────────────────────────────────
+// SITE SETTINGS
+// ─────────────────────────────────────────────
+
+model SiteSettings {
+  id                String   @id @default("singleton")
+  bankName          String?
+  bankAccountName   String?
+  bankAccountNumber String?
+  whatsappNumber    String?
+  facebookUrl       String?
+  instagramUrl      String?
+  twitterUrl        String?
+  youtubeUrl        String?
+  updatedAt         DateTime @updatedAt
+}
