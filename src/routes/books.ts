@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/require-admin.js";
-
+import { uploadCoverImage, uploadEbookFile } from "../lib/supabase.js";
 export const booksRoutes = new Hono();
 
 // ── PUBLIC ──────────────────────────────────────────────
@@ -31,6 +31,9 @@ booksRoutes.get("/:slug", async (c) => {
   return c.json({ book: publicBook });
 });
 
+
+
+
 // ── ADMIN ───────────────────────────────────────────────
 
 const bookInputSchema = z.object({
@@ -52,7 +55,7 @@ booksRoutes.get("/admin/all", requireAdmin, async (c) => {
 });
 
 // POST /books — create a new book
-booksRoutes.post("/", requireAdmin, async (c) => {
+booksRoutes.post("admin/createbook", requireAdmin, async (c) => {
   const parsed = bookInputSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ error: parsed.error.flatten() }, 400);
@@ -88,11 +91,51 @@ booksRoutes.patch("/:id/deactivate", requireAdmin, async (c) => {
   return c.json({ book });
 });
 
+
 booksRoutes.patch("/:id/activate", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const book = await prisma.book.update({
     where: { id },
     data: { status: "ACTIVE" },
   });
+  return c.json({ book });
+});
+
+
+// POST /books/:id/cover — admin uploads a cover image (multipart/form-data, field "file")
+booksRoutes.post("/:id/cover", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const body = await c.req.parseBody();
+  const file = body["file"];
+
+  if (!(file instanceof File)) {
+    return c.json({ error: "No file provided under the 'file' field" }, 400);
+  }
+  if (!file.type.startsWith("image/")) {
+    return c.json({ error: "Cover must be an image file" }, 400);
+  }
+
+  const coverImageUrl = await uploadCoverImage(id, file);
+  const book = await prisma.book.update({ where: { id }, data: { coverImageUrl } });
+  return c.json({ book });
+});
+
+
+
+// POST /books/:id/ebook — admin uploads the ebook PDF (multipart/form-data, field "file")
+booksRoutes.post("/:id/ebook", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const body = await c.req.parseBody();
+  const file = body["file"];
+
+  if (!(file instanceof File)) {
+    return c.json({ error: "No file provided under the 'file' field" }, 400);
+  }
+  if (file.type !== "application/pdf") {
+    return c.json({ error: "Ebook file must be a PDF" }, 400);
+  }
+
+  const ebookFileUrl = await uploadEbookFile(id, file);
+  const book = await prisma.book.update({ where: { id }, data: { ebookFileUrl } });
   return c.json({ book });
 });

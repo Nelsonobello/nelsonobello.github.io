@@ -10,6 +10,7 @@ type InitializeParams = {
   email: string;
   amountKobo: number;
   reference: string;
+  callbackUrl?: string;
 };
 
 type InitializeResponse = {
@@ -31,9 +32,11 @@ export async function initializeTransaction({
   email,
   amountKobo,
   reference,
+  callbackUrl,
 }: InitializeParams): Promise<InitializeResponse["data"]> {
+  console.log("Paystack callback_url being sent:", callbackUrl ?? process.env.PAYSTACK_CALLBACK_URL);
   const res = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
-    method: "POST",
+     method: "POST",
     headers: {
       Authorization: `Bearer ${secretKey()}`,
       "Content-Type": "application/json",
@@ -43,7 +46,7 @@ export async function initializeTransaction({
       amount: amountKobo,
       reference,
       channels: ["bank_transfer"],
-      callback_url: process.env.PAYSTACK_CALLBACK_URL,
+      callback_url: callbackUrl ?? process.env.PAYSTACK_CALLBACK_URL,
     }),
   });
 

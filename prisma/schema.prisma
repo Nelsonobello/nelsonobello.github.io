@@ -8,8 +8,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -119,11 +120,35 @@ model OrderItem {
 // CBT (COMPUTER-BASED TEST) PRACTICE
 // ─────────────────────────────────────────────
 
+enum CBTAttemptStatus {
+  PENDING_PAYMENT
+  PAID
+}
+
 model CBTSubject {
   id        String        @id @default(cuid())
   name      String        @unique
   questions CBTQuestion[]
 }
+
+model CBTAttempt {
+  id                 String           @id @default(cuid())
+  subjectId          String?
+  email              String
+  accessCode         String?          @unique
+  priceKobo          Int
+  attemptsGranted    Int              @default(1)
+  attemptsUsed       Int              @default(0)
+  status             CBTAttemptStatus @default(PENDING_PAYMENT)
+  paystackReference  String?          @unique
+  paystackAuthUrl    String?
+  paystackVerifiedAt DateTime?
+  createdAt          DateTime         @default(now())
+
+  sessions CBTPracticeSession[]
+}
+
+
 
 model CBTQuestion {
   id            String     @id @default(cuid())
@@ -140,15 +165,16 @@ model CBTQuestion {
 }
 
 model CBTPracticeSession {
-  id           String    @id @default(cuid())
+  id           String      @id @default(cuid())
   email        String?
   subjectId    String
+  attemptId    String?
+  attempt      CBTAttempt? @relation(fields: [attemptId], references: [id])
   totalAsked   Int
   totalCorrect Int
-  startedAt    DateTime  @default(now())
+  startedAt    DateTime    @default(now())
   completedAt  DateTime?
 }
-
 // ─────────────────────────────────────────────
 // LEAD CAPTURE
 // ─────────────────────────────────────────────

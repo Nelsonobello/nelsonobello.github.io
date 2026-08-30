@@ -138,20 +138,29 @@ ordersRoutes.get("/callback", async (c) => {
   if (!reference) return c.json({ error: "Missing reference" }, 400);
 
   const verified = await verifyTransaction(reference);
-
   if (verified.status !== "success") {
     return c.json({ status: "failed", message: "Payment was not successful" }, 200);
   }
 
-  const order = await prisma.order.update({
-    where: { paystackReference: reference },
+  const order = await prisma.order.findUnique({ where: { paystackReference: reference } });
+  if (!order) return c.json({ error: "Order not found" }, 404);
+
+  if (verified.amount !== order.totalKobo) {
+    return c.json({ status: "failed", message: "Amount mismatch" }, 400);
+  }
+
+  if (order.status === "FULFILLED") {
+    return c.json({ status: "success", order }); // already handled, likely by webhook
+  }
+
+  const updated = await prisma.order.update({
+    where: { id: order.id },
     data: { paystackVerifiedAt: new Date(), status: "PAID", paidAt: new Date() },
   });
 
-  const fulfilled = await fulfillOrder(order.id);
+  const fulfilled = await fulfillOrder(updated.id);
   return c.json({ status: "success", order: fulfilled });
 });
-
 // ── PAYSTACK WEBHOOK (server-to-server, source of truth) ─
 
 // POST /orders/webhook
@@ -176,10 +185,10 @@ ordersRoutes.post("/webhook", async (c) => {
 
     // Re-verify against Paystack directly rather than trusting the webhook
     // payload's own "status" field — belt and suspenders.
-    const verified = await verifyTransaction(reference);
+        const verified = await verifyTransaction(reference);
     if (verified.status === "success") {
       const order = await prisma.order.findUnique({ where: { paystackReference: reference } });
-      if (order && order.status !== "FULFILLED") {
+      if (order && order.status !== "FULFILLED" && verified.amount === order.totalKobo) {
         await prisma.order.update({
           where: { id: order.id },
           data: { paystackVerifiedAt: new Date(), status: "PAID", paidAt: new Date() },
@@ -192,6 +201,10 @@ ordersRoutes.post("/webhook", async (c) => {
   // Always 200 quickly so Paystack doesn't keep retrying
   return c.json({ received: true });
 });
+
+
+
+
 
 // ── CUSTOMER ORDER LOOKUP ────────────────────────────────
 

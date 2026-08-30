@@ -8,6 +8,7 @@ export const supabase = createClient(
 );
 
 const EBOOKS_BUCKET = process.env.SUPABASE_EBOOKS_BUCKET || "ebooks";
+const COVERS_BUCKET = process.env.SUPABASE_COVERS_BUCKET || "covers";
 
 /**
  * Generates a time-limited signed URL for a private ebook file.
@@ -30,4 +31,48 @@ export async function createEbookSignedUrl(
     signedUrl: data.signedUrl,
     expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
   };
+}
+
+
+
+
+/**
+ * Uploads a book cover image to the public "covers" bucket and returns
+ * its public URL — this is what gets saved directly onto Book.coverImageUrl.
+ */
+export async function uploadCoverImage(bookId: string, file: File) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${bookId}-${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(COVERS_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (error) {
+    throw new Error(`Cover upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(COVERS_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/**
+ * Uploads an ebook PDF to the private "ebooks" bucket and returns the
+ * storage path (not a public URL) — this is what gets saved onto
+ * Book.ebookFileUrl. A real download link is only ever generated later,
+ * on-demand, via createEbookSignedUrl.
+ */
+export async function uploadEbookFile(bookId: string, file: File) {
+  const ext = file.name.split(".").pop() || "pdf";
+  const path = `${bookId}-${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(EBOOKS_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (error) {
+    throw new Error(`Ebook upload failed: ${error.message}`);
+  }
+
+  return path;
 }
