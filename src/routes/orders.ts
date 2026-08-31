@@ -222,13 +222,53 @@ ordersRoutes.get("/:id", async (c) => {
 
 // ── ADMIN ────────────────────────────────────────────────
 
-// GET /orders — dashboard order list
+// GET /orders?page=1&limit=10&status=PENDING_PAYMENT — dashboard order list
 ordersRoutes.get("/", requireAdmin, async (c) => {
-  const orders = await prisma.order.findMany({
-    include: { customer: true, items: { include: { book: true } } },
-    orderBy: { createdAt: "desc" },
+  const page = Number(c.req.query("page")) || 1;
+  const limit = Number(c.req.query("limit")) || 10;
+  const status = c.req.query("status");
+
+  const where = status ? { status: status as any } : {};
+
+  const [items, total] = await Promise.all([
+    prisma.order.findMany({
+      where,
+      include: { customer: true, items: { include: { book: true } } },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.order.count({ where }),
+  ]);
+
+  return c.json({
+    items,
+    total,
+    page,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
   });
-  return c.json({ orders });
+});
+
+
+
+
+const updateStatusSchema = z.object({
+  status: z.enum(["PENDING_PAYMENT", "PAID", "FULFILLED", "CANCELLED"]),
+});
+
+// PATCH /orders/:id/status — admin manually sets an order's status
+// (e.g. marking PAID orders as FULFILLED, or cancelling)
+ordersRoutes.patch("/:id/status", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const parsed = updateStatusSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { status: parsed.data.status },
+  });
+
+  return c.json({ order });
 });
 
 // PATCH /orders/:id/confirm-transfer — admin manually confirms a bank
