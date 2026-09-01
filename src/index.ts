@@ -18,12 +18,22 @@ import { dashboardRoutes } from "./routes/dashboardstats.js";
 // ✅ Create main app
 const app = new Hono();
 
-// ✅ Middleware on main app (applies to ALL routes)
-app.use("*", logger());
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.ADMIN_FRONTEND_URL,
+  process.env.NODE_ENV !== "production" ? "http://localhost:3000" : null,
+  process.env.NODE_ENV !== "production" ? "http://localhost:3001" : null,
+].filter((origin): origin is string => Boolean(origin));
+
+
 app.use(
   "*",
   cors({
-    origin: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : "*",
+    origin: allowedOrigins,
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
 );
 
