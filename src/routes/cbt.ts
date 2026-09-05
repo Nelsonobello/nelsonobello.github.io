@@ -1,6 +1,7 @@
 // CBT (Computer-Based Test) routes
 import { Hono } from "hono";
 import { z } from "zod";
+import nodemailer from "nodemailer";
 import type { CBTQuestion } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/require-admin.js";
@@ -8,6 +9,32 @@ import { initializeTransaction, verifyTransaction } from "../lib/paystack.js";
 import { uploadQuestionImage } from "../lib/supabase.js";
 
 export const cbtRoutes = new Hono();
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_PORT === "465",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+async function sendAccessCodeEmail(to: string, accessCode: string, attemptsGranted: number) {
+  await transporter.sendMail({
+    from: process.env.MAIL_FROM || `"NELBELL CBT Practice" <no-reply@nelbell.com>`,
+    to,
+    subject: "Your CBT Practice access code",
+    html: `
+      <p>Thanks for your payment!</p>
+      <p>Your access code is:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 2px;">${accessCode}</p>
+      <p>This unlocks ${attemptsGranted} practice attempt${attemptsGranted > 1 ? "s" : ""}. Enter this code along with the email you paid with to start practicing.</p>
+    `,
+  });
+}
+
+// ── PUBLIC ──────────────────────────────────────────────
 
 // ── PUBLIC ──────────────────────────────────────────────
 
@@ -68,6 +95,7 @@ cbtRoutes.post("/attempts", async (c) => {
 
 
 // GET /cbt/attempts/callback?reference=... — browser redirect after payment
+// GET /cbt/attempts/callback?reference=... — browser redirect after payment
 cbtRoutes.get("/attempts/callback", async (c) => {
   const reference = c.req.query("reference");
   if (!reference) return c.json({ error: "Missing reference" }, 400);
@@ -88,10 +116,12 @@ cbtRoutes.get("/attempts/callback", async (c) => {
     return c.json({ status: "success", attempt });
   }
 
-   const updated = await prisma.cBTAttempt.update({
+  const updated = await prisma.cBTAttempt.update({
     where: { id: attempt.id },
     data: { status: "PAID", paystackVerifiedAt: new Date(), accessCode: generateAccessCode() },
   });
+
+  await sendAccessCodeEmail(updated.email, updated.accessCode!, updated.attemptsGranted);
 
   return c.json({
     status: "success",
