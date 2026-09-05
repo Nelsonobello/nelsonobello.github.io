@@ -76,3 +76,25 @@ export async function uploadEbookFile(bookId: string, file: File) {
 
   return path;
 }
+
+const QUESTIONS_BUCKET = process.env.SUPABASE_QUESTIONS_BUCKET || "cbt-question-images";
+
+/**
+ * Uploads a CBT question image to the public "cbt-question-images" bucket
+ * and returns its public URL — saved directly onto CBTQuestion.imageUrl.
+ */
+export async function uploadQuestionImage(questionId: string, file: File) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${questionId}-${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(QUESTIONS_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (error) {
+    throw new Error(`Question image upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(QUESTIONS_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}

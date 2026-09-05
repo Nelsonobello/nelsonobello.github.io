@@ -1,9 +1,11 @@
+// CBT (Computer-Based Test) routes
 import { Hono } from "hono";
 import { z } from "zod";
 import type { CBTQuestion } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/require-admin.js";
 import { initializeTransaction, verifyTransaction } from "../lib/paystack.js";
+import { uploadQuestionImage } from "../lib/supabase.js";
 
 export const cbtRoutes = new Hono();
 
@@ -157,6 +159,7 @@ cbtRoutes.get("/subjects/:id/questions", async (c) => {
       optionB: true,
       optionC: true,
       optionD: true,
+      imageUrl: true,
     },
   });
 
@@ -269,6 +272,27 @@ cbtRoutes.delete("/questions/:id", requireAdmin, async (c) => {
   await prisma.cBTQuestion.delete({ where: { id } });
   return c.json({ deleted: true });
 });
+
+// POST /cbt/questions/:id/image — admin uploads a question image (multipart/form-data, field "file")
+cbtRoutes.post("/questions/:id/image", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const body = await c.req.parseBody();
+  const file = body["file"];
+
+  if (!(file instanceof File)) {
+    return c.json({ error: "No file provided under the 'file' field" }, 400);
+  }
+  if (!file.type.startsWith("image/")) {
+    return c.json({ error: "Question image must be an image file" }, 400);
+  }
+
+  const imageUrl = await uploadQuestionImage(id, file);
+  const question = await prisma.cBTQuestion.update({ where: { id }, data: { imageUrl } });
+  return c.json({ question });
+});
+
+
+
 
 const bulkImportSchema = z.array(questionSchema).min(1);
 

@@ -26,7 +26,7 @@ const checkoutSchema = z.object({
       })
     )
     .min(1),
-  paymentMethod: z.enum(["BANK_TRANSFER", "PAYSTACK"]),
+paymentMethod: z.literal("PAYSTACK"),
 });
 
 // POST /orders/checkout
@@ -87,23 +87,7 @@ ordersRoutes.post("/checkout", async (c) => {
     include: { items: true, customer: true },
   });
 
-  if (paymentMethod === "BANK_TRANSFER") {
-    const settings = await prisma.siteSettings.findUnique({
-      where: { id: "singleton" },
-    });
-    return c.json({
-      order,
-      bankDetails: settings
-        ? {
-            bankName: settings.bankName,
-            accountName: settings.bankAccountName,
-            accountNumber: settings.bankAccountNumber,
-          }
-        : null,
-      instructions:
-        "Transfer the total amount to the account above, then contact us with your order ID as reference so we can confirm and fulfil your order.",
-    });
-  }
+  
 
   // PAYSTACK — initialize and hand back the redirect URL
   const paystackData = await initializeTransaction({
@@ -271,21 +255,3 @@ ordersRoutes.patch("/:id/status", requireAdmin, async (c) => {
   return c.json({ order });
 });
 
-// PATCH /orders/:id/confirm-transfer — admin manually confirms a bank
-// transfer landed, then triggers the same fulfillment logic as Paystack
-ordersRoutes.patch("/:id/confirm-transfer", requireAdmin, async (c) => {
-  const id = c.req.param("id")!;
-  const body = await c.req.json().catch(() => ({}));
-
-  await prisma.order.update({
-    where: { id },
-    data: {
-      status: "PAID",
-      paidAt: new Date(),
-      bankTransferRef: body.bankTransferRef ?? undefined,
-    },
-  });
-
-  const fulfilled = await fulfillOrder(id);
-  return c.json({ order: fulfilled });
-});

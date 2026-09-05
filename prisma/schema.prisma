@@ -47,6 +47,7 @@ model Book {
   description   String
   author        String     @default("Nelson O. Bello")
   format        BookFormat
+  subtitle      String?
   priceKobo     Int
   coverImageUrl String?
   ebookFileUrl  String?    // Supabase Storage path, e.g. "ebooks/book-slug.pdf" — NOT a public URL
@@ -59,7 +60,7 @@ model Book {
 }
 
 enum PaymentMethod {
-  BANK_TRANSFER
+
   PAYSTACK
 }
 
@@ -85,11 +86,10 @@ model Order {
   id              String        @id @default(cuid())
   customer        Customer      @relation(fields: [customerId], references: [id])
   customerId      String
-  paymentMethod   PaymentMethod @default(BANK_TRANSFER)
+  paymentMethod   PaymentMethod @default(PAYSTACK)
   status          OrderStatus   @default(PENDING_PAYMENT)
   totalKobo       Int
 
-  bankTransferRef     String?
 
   paystackReference   String?   @unique
   paystackAuthUrl     String?
@@ -149,7 +149,6 @@ model CBTAttempt {
 }
 
 
-
 model CBTQuestion {
   id            String     @id @default(cuid())
   subject       CBTSubject @relation(fields: [subjectId], references: [id])
@@ -161,6 +160,7 @@ model CBTQuestion {
   optionD       String
   correctOption String
   explanation   String?
+  imageUrl      String?
   createdAt     DateTime   @default(now())
 }
 

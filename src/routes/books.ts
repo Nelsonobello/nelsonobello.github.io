@@ -5,6 +5,31 @@ import { requireAdmin } from "../middleware/require-admin.js";
 import { uploadCoverImage, uploadEbookFile } from "../lib/supabase.js";
 export const booksRoutes = new Hono();
 
+// ── SLUG HELPERS ────────────────────────────────────────
+
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+async function generateUniqueSlug(title: string): Promise<string> {
+  const base = slugify(title) || "book";
+  let slug = base;
+  let suffix = 2;
+
+  while (await prisma.book.findUnique({ where: { slug } })) {
+    slug = `${base}-${suffix}`;
+    suffix++;
+  }
+
+  return slug;
+}
+
 // ── PUBLIC ──────────────────────────────────────────────
 
 // GET /books — storefront catalog, active books only
@@ -38,9 +63,9 @@ booksRoutes.get("/:slug", async (c) => {
 
 const bookInputSchema = z.object({
   title: z.string().min(1),
-  slug: z.string().min(1),
   description: z.string().min(1),
   author: z.string().optional(),
+  subtitle: z.string().optional(),
   format: z.enum(["EBOOK", "PHYSICAL"]),
   priceKobo: z.number().int().positive(),
   coverImageUrl: z.string().url().optional(),
@@ -54,6 +79,19 @@ booksRoutes.get("/admin/all", requireAdmin, async (c) => {
   return c.json({ books });
 });
 
+// GET /books/admin/:id — single book by id, for the edit form (any status)
+booksRoutes.get("/admin/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+  const book = await prisma.book.findUnique({ where: { id } });
+
+  if (!book) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  return c.json({ book });
+});
+
+
 // POST /books — create a new book
 booksRoutes.post("admin/createbook", requireAdmin, async (c) => {
   const parsed = bookInputSchema.safeParse(await c.req.json());
@@ -61,11 +99,17 @@ booksRoutes.post("admin/createbook", requireAdmin, async (c) => {
     return c.json({ error: parsed.error.flatten() }, 400);
   }
 
-  const book = await prisma.book.create({ data: parsed.data });
+  const slug = await generateUniqueSlug(parsed.data.title);
+
+  const book = await prisma.book.create({
+    data: { ...parsed.data, slug },
+  });
   return c.json({ book }, 201);
 });
 
 // PATCH /books/:id — edit price, description, cover, etc.
+// Note: slug is never regenerated here, even if title changes —
+// it's fixed at creation so published book URLs never break.
 booksRoutes.patch("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const parsed = bookInputSchema.partial().safeParse(await c.req.json());
