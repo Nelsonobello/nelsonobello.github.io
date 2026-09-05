@@ -39,6 +39,7 @@
 
   // ✅ Health check on main app (no version)
   app.get("/", (c) => c.json({ status: "ok", service: "nelbell-backend" }));
+  app.get("/health", (c) => c.text("OK"));
 
   // ✅ API info endpoint
   app.get("/api", (c) => c.json({
