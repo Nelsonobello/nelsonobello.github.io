@@ -121,7 +121,9 @@ cbtRoutes.get("/attempts/callback", async (c) => {
     data: { status: "PAID", paystackVerifiedAt: new Date(), accessCode: generateAccessCode() },
   });
 
-  await sendAccessCodeEmail(updated.email, updated.accessCode!, updated.attemptsGranted);
+sendAccessCodeEmail(updated.email, updated.accessCode!, updated.attemptsGranted).catch((err) => {
+    console.error("Failed to send access code email (non-blocking):", err);
+  });
 
   return c.json({
     status: "success",
