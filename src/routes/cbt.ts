@@ -1,7 +1,7 @@
 // CBT (Computer-Based Test) routes
 import { Hono } from "hono";
 import { z } from "zod";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import type { CBTQuestion } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/require-admin.js";
@@ -10,19 +10,11 @@ import { uploadQuestionImage } from "../lib/supabase.js";
 
 export const cbtRoutes = new Hono();
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_PORT === "465",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendAccessCodeEmail(to: string, accessCode: string, attemptsGranted: number) {
-  await transporter.sendMail({
-    from: process.env.MAIL_FROM || `"NELBELL CBT Practice" <no-reply@nelbell.com>`,
+  await resend.emails.send({
+    from: process.env.MAIL_FROM || "NELBELL CBT Practice <onboarding@resend.dev>",
     to,
     subject: "Your CBT Practice access code",
     html: `
@@ -33,7 +25,6 @@ async function sendAccessCodeEmail(to: string, accessCode: string, attemptsGrant
     `,
   });
 }
-
 // ── PUBLIC ──────────────────────────────────────────────
 
 // ── PUBLIC ──────────────────────────────────────────────

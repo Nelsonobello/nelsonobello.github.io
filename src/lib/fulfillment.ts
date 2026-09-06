@@ -1,17 +1,10 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { prisma } from "./prisma.js";
 import { createEbookSignedUrl } from "./supabase.js";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  family: 4,
-} as any);
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+
 
 /**
  * Marks an order PAID/FULFILLED and generates signed download links for
@@ -89,8 +82,8 @@ async function sendFulfillmentEmail(
     .map((l) => `<li><a href="${l.url}">${l.title}</a></li>`)
     .join("");
 
-  await transporter.sendMail({
-    from: process.env.MAIL_FROM || `"NELBELL Bookstore" <no-reply@nelbell.com>`,
+  await resend.emails.send({
+    from: process.env.MAIL_FROM || "NELBELL Bookstore <onboarding@resend.dev>",
     to,
     subject: "Your order is ready — download your book(s)",
     html: `
