@@ -34,13 +34,17 @@ cbtRoutes.get("/subjects", async (c) => {
   const subjects = await prisma.cBTSubject.findMany();
   return c.json({ subjects });
 });
-
 function attemptPriceKobo() {
   const price = Number(process.env.CBT_ATTEMPT_PRICE_KOBO);
   if (!price) throw new Error("CBT_ATTEMPT_PRICE_KOBO is not set");
   return price;
 }
 
+function examDurationMinutes() {
+  const minutes = Number(process.env.CBT_EXAM_DURATION_MINUTES);
+  if (!minutes) throw new Error("CBT_EXAM_DURATION_MINUTES is not set");
+  return minutes;
+}
 // e.g. "7K2A9XQP" — short, unambiguous (no 0/O/1/I), easy to type back in
 function generateAccessCode(): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -148,28 +152,61 @@ cbtRoutes.post("/attempts/redeem", async (c) => {
     return c.json({ error: "No attempts remaining — please make a new purchase" }, 402);
   }
 
-  return c.json({
+   return c.json({
     attemptId: attempt.id,
     attemptsRemaining: attempt.attemptsGranted - attempt.attemptsUsed,
   });
 });
 
-// GET /cbt/subjects/:id/questions?limit=20&attemptId=...// GET /cbt/subjects/:id/questions?limit=20&attemptId=...
-// Correct answers/explanations are stripped here — only revealed after
-// the practice session is submitted, via /cbt/sessions.
-// Requires a PAID CBTAttempt with remaining attemptsUsed < attemptsGranted.
-cbtRoutes.get("/subjects/:id/questions", async (c) => {
-  const subjectId = c.req.param("id")!;
-  const attemptId = c.req.query("attemptId");
-  const limit = Number(c.req.query("limit") || 40);
+const startSessionSchema = z.object({ attemptId: z.string(), email: z.string().email().optional() });
 
-  if (!attemptId) return c.json({ error: "attemptId is required" }, 400);
+// POST /cbt/subjects/:id/start — marks the real start of an exam attempt,
+// stamping startedAt. The frontend uses startedAt + durationMinutes to run its countdown.
+cbtRoutes.post("/subjects/:id/start", async (c) => {
+  const subjectId = c.req.param("id")!;
+  const parsed = startSessionSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  const { attemptId, email } = parsed.data;
   const attempt = await prisma.cBTAttempt.findUnique({ where: { id: attemptId } });
   if (!attempt || attempt.status !== "PAID") {
     return c.json({ error: "Valid paid attempt required" }, 402);
   }
   if (attempt.attemptsUsed >= attempt.attemptsGranted) {
     return c.json({ error: "No attempts remaining on this purchase" }, 402);
+  }
+
+  const session = await prisma.cBTPracticeSession.create({
+    data: { subjectId, attemptId, email, totalAsked: 0, totalCorrect: 0 },
+  });
+
+  return c.json({
+    sessionId: session.id,
+    startedAt: session.startedAt,
+    durationMinutes: examDurationMinutes(),
+  });
+});
+
+// GET /cbt/subjects/:id/questions?limit=20&sessionId=...
+// GET /cbt/subjects/:id/questions?limit=20&attemptId=...// GET /cbt/subjects/:id/questions?limit=20&attemptId=...
+// Correct answers/explanations are stripped here — only revealed after
+// the practice session is submitted, via /cbt/sessions.
+// Requires a PAID CBTAttempt with remaining attemptsUsed < attemptsGranted.
+// Correct answers/explanations are stripped here — only revealed after
+// the practice session is submitted, via /cbt/sessions.
+// Requires a live (not-yet-completed) session created via /subjects/:id/start.
+cbtRoutes.get("/subjects/:id/questions", async (c) => {
+  const subjectId = c.req.param("id")!;
+  const sessionId = c.req.query("sessionId");
+  const limit = Number(c.req.query("limit") || 40);
+
+  if (!sessionId) return c.json({ error: "sessionId is required" }, 400);
+  const session = await prisma.cBTPracticeSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.subjectId !== subjectId) {
+    return c.json({ error: "Invalid session for this subject" }, 404);
+  }
+  if (session.completedAt) {
+    return c.json({ error: "This exam session has already been submitted" }, 409);
   }
 
   const questions = await prisma.cBTQuestion.findMany({
@@ -186,31 +223,45 @@ cbtRoutes.get("/subjects/:id/questions", async (c) => {
     },
   });
 
-  return c.json({ questions });
+  return c.json({
+    questions,
+    startedAt: session.startedAt,
+    durationMinutes: examDurationMinutes(),
+  });
 });
 
 const submitSchema = z.object({
-  subjectId: z.string(),
+  sessionId: z.string(),
   attemptId: z.string(),
-  email: z.string().email().optional(),
   answers: z.array(z.object({ questionId: z.string(), selected: z.enum(["A", "B", "C", "D"]) })),
 });
 
-// POST /cbt/sessions — grades the attempt and records a practice session.
+// POST /cbt/sessions — grades the attempt and closes out the session opened via /start.
 // Each successful submit consumes one attempt from the purchase's balance.
 cbtRoutes.post("/sessions", async (c) => {
   const parsed = submitSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-  const { subjectId, attemptId, email, answers } = parsed.data;
+  const { sessionId, attemptId, answers } = parsed.data;
 
-   const attempt = await prisma.cBTAttempt.findUnique({ where: { id: attemptId } });
+  const session = await prisma.cBTPracticeSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.attemptId !== attemptId) {
+    return c.json({ error: "Invalid session for this attempt" }, 404);
+  }
+  if (session.completedAt) {
+    return c.json({ error: "This exam session has already been submitted" }, 409);
+  }
+
+  const attempt = await prisma.cBTAttempt.findUnique({ where: { id: attemptId } });
   if (!attempt || attempt.status !== "PAID") {
     return c.json({ error: "Valid paid attempt required" }, 402);
   }
   if (attempt.attemptsUsed >= attempt.attemptsGranted) {
     return c.json({ error: "No attempts remaining on this purchase" }, 409);
   }
+
+  const deadline = new Date(session.startedAt.getTime() + examDurationMinutes() * 60_000);
+  const submittedLate = new Date() > deadline;
 
   const questions = await prisma.cBTQuestion.findMany({
     where: { id: { in: answers.map((a) => a.questionId) } },
@@ -230,15 +281,9 @@ cbtRoutes.post("/sessions", async (c) => {
     };
   });
 
-  const session = await prisma.cBTPracticeSession.create({
-    data: {
-      subjectId,
-      attemptId,
-      email,
-      totalAsked: answers.length,
-      totalCorrect,
-      completedAt: new Date(),
-    },
+  const updatedSession = await prisma.cBTPracticeSession.update({
+    where: { id: sessionId },
+    data: { totalAsked: answers.length, totalCorrect, completedAt: new Date() },
   });
 
   const updatedAttempt = await prisma.cBTAttempt.update({
@@ -247,8 +292,9 @@ cbtRoutes.post("/sessions", async (c) => {
   });
 
   return c.json({
-    session,
+    session: updatedSession,
     results,
+    submittedLate,
     attemptsRemaining: updatedAttempt.attemptsGranted - updatedAttempt.attemptsUsed,
   });
 });
