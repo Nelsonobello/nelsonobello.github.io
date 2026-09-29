@@ -41,33 +41,32 @@ adminRoutes.post("/login", async (c) => {
 const resetPasswordSchema = z.object({
   email: z.string().email(),
   newPassword: z.string().min(6),
+  name: z.string().optional(),
   secret: z.string(),
 });
 
-// POST /admin/reset-password — self-serve recovery, no login required.
-// Guarded by ADMIN_RESET_SECRET instead of requireAdmin, since this exists
-// precisely for the case where the admin is locked out and can't log in.
+// TEMPORARY — remove this route after use.
 adminRoutes.post("/reset-password", async (c) => {
   const parsed = resetPasswordSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ error: "Invalid request body" }, 400);
   }
 
-  const { email, newPassword, secret } = parsed.data;
+  const { email, newPassword, name, secret } = parsed.data;
 
-  if (secret !== process.env.ADMIN_RESET_SECRET) {
+  if (secret !== "put-any-random-string-here-just-for-now") {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const admin = await prisma.admin.findUnique({ where: { email } });
-  if (!admin) {
-    return c.json({ error: `No admin found for ${email}` }, 404);
-  }
-
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.admin.update({ where: { email }, data: { passwordHash } });
 
-  return c.json({ message: `Password updated for ${email}` });
+  const admin = await prisma.admin.upsert({
+    where: { email },
+    create: { email, passwordHash, name: name || "Admin" },
+    update: { passwordHash },
+  });
+
+  return c.json({ message: `Admin ready: ${admin.email}`, id: admin.id });
 });
 
 // GET /admin/me — lets the dashboard confirm the current session and load
