@@ -38,36 +38,7 @@ adminRoutes.post("/login", async (c) => {
   return c.json({ token, admin: { id: admin.id, name: admin.name, email: admin.email } });
 });
 
-const resetPasswordSchema = z.object({
-  email: z.string().email(),
-  newPassword: z.string().min(6),
-  name: z.string().optional(),
-  secret: z.string(),
-});
 
-// TEMPORARY — remove this route after use.
-adminRoutes.post("/reset-password", async (c) => {
-  const parsed = resetPasswordSchema.safeParse(await c.req.json());
-  if (!parsed.success) {
-    return c.json({ error: "Invalid request body" }, 400);
-  }
-
-  const { email, newPassword, name, secret } = parsed.data;
-
-  if (secret !== "put-any-random-string-here-just-for-now") {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-
-  const admin = await prisma.admin.upsert({
-    where: { email },
-    create: { email, passwordHash, name: name || "Admin" },
-    update: { passwordHash },
-  });
-
-  return c.json({ message: `Admin ready: ${admin.email}`, id: admin.id });
-});
 
 // GET /admin/me — lets the dashboard confirm the current session and load
 // the admin's name without re-sending the password.

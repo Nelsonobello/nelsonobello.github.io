@@ -45,6 +45,14 @@ function examDurationMinutes() {
   if (!minutes) throw new Error("CBT_EXAM_DURATION_MINUTES is not set");
   return minutes;
 }
+
+const ENGLISH_SUBJECT_ID = "cmuo4ugkt0002h7qjxjvg14xi";
+const ENGLISH_QUESTION_LIMIT = 60;
+const DEFAULT_QUESTION_LIMIT = 40;
+
+function questionLimit(subjectId: string) {
+  return subjectId === ENGLISH_SUBJECT_ID ? ENGLISH_QUESTION_LIMIT : DEFAULT_QUESTION_LIMIT;
+}
 // e.g. "7K2A9XQP" — short, unambiguous (no 0/O/1/I), easy to type back in
 function generateAccessCode(): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -198,7 +206,7 @@ cbtRoutes.post("/subjects/:id/start", async (c) => {
 cbtRoutes.get("/subjects/:id/questions", async (c) => {
   const subjectId = c.req.param("id")!;
   const sessionId = c.req.query("sessionId");
-  const limit = Number(c.req.query("limit") || 40);
+  const limit = questionLimit(subjectId);
 
   if (!sessionId) return c.json({ error: "sessionId is required" }, 400);
   const session = await prisma.cBTPracticeSession.findUnique({ where: { id: sessionId } });
