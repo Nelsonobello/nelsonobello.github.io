@@ -77,6 +77,62 @@ export async function uploadEbookFile(bookId: string, file: File) {
   return path;
 }
 
+/**
+ * Removes a deleted book's cover and ebook files from Storage.
+ * Best-effort: failures are logged but never block the delete.
+ */
+export async function deleteBookFiles(
+  coverImageUrl: string | null,
+  ebookFileUrl: string | null
+) {
+  if (coverImageUrl) {
+    const coverPath = decodeURIComponent(
+      coverImageUrl.split("?")[0].split("/").pop() || ""
+    );
+    if (coverPath) {
+      const { error } = await supabase.storage.from(COVERS_BUCKET).remove([coverPath]);
+      if (error) console.error("Failed to delete cover file:", error.message);
+    }
+  }
+
+  if (ebookFileUrl) {
+    const { error } = await supabase.storage.from(EBOOKS_BUCKET).remove([ebookFileUrl]);
+    if (error) console.error("Failed to delete ebook file:", error.message);
+  }
+}
+
+/**
+ * Uploads a testimonial photo to the public "covers" bucket, inside a
+ * "testimonials/" folder, and returns its public URL.
+ */
+export async function uploadTestimonialImage(testimonialId: string, file: File) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `testimonials/${testimonialId}-${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(COVERS_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true });
+
+  if (error) {
+    throw new Error(`Testimonial image upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(COVERS_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/** Removes a testimonial photo from Storage. Best-effort, never throws. */
+export async function deleteTestimonialImage(imageUrl: string | null) {
+  if (!imageUrl) return;
+  const marker = `/object/public/${COVERS_BUCKET}/`;
+  const idx = imageUrl.indexOf(marker);
+  if (idx === -1) return;
+
+  const path = decodeURIComponent(imageUrl.slice(idx + marker.length).split("?")[0]);
+  const { error } = await supabase.storage.from(COVERS_BUCKET).remove([path]);
+  if (error) console.error("Failed to delete testimonial image:", error.message);
+}
+
 const QUESTIONS_BUCKET = process.env.SUPABASE_QUESTIONS_BUCKET || "cbt-question-images";
 
 /**

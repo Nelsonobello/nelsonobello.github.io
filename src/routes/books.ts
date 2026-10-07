@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/require-admin.js";
-import { uploadCoverImage, uploadEbookFile } from "../lib/supabase.js";
+import { uploadCoverImage, uploadEbookFile, deleteBookFiles } from "../lib/supabase.js";
 export const booksRoutes = new Hono();
 
 // ── SLUG HELPERS ────────────────────────────────────────
@@ -145,6 +145,35 @@ booksRoutes.patch("/:id/activate", requireAdmin, async (c) => {
   return c.json({ book });
 });
 
+
+// DELETE /books/:id — permanently deletes a book (no undo).
+// Blocked if any order references it, so order history stays intact.
+booksRoutes.delete("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
+
+  const book = await prisma.book.findUnique({ where: { id } });
+  if (!book) {
+    return c.json({ error: "Book not found" }, 404);
+  }
+
+  const orderCount = await prisma.orderItem.count({ where: { bookId: id } });
+  if (orderCount > 0) {
+    return c.json(
+      {
+        error:
+          "This book has been ordered before, so it can't be permanently deleted. Deactivate it instead.",
+      },
+      409
+    );
+  }
+
+  await prisma.book.delete({ where: { id } });
+
+  // Clean up Storage after the row is gone (best-effort, never blocks the delete)
+  await deleteBookFiles(book.coverImageUrl, book.ebookFileUrl);
+
+  return c.json({ deleted: true });
+});
 
 // POST /books/:id/cover — admin uploads a cover image (multipart/form-data, field "file")
 booksRoutes.post("/:id/cover", requireAdmin, async (c) => {

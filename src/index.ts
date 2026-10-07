@@ -13,6 +13,7 @@
   import { inquiriesRoutes } from "./routes/inquiries.js";
   import { settingsRoutes } from "./routes/settings.js";
   import { dashboardRoutes } from "./routes/dashboardstats.js";
+  import { testimonialsRoutes } from "./routes/testimonials.js";
   // ...
 
   // ✅ Create main app
@@ -51,7 +52,8 @@
       cbt: "/api/v1/cbt",
       inquiries: "/api/v1/inquiries",
       settings: "/api/v1/settings",
-      dashboard: "/api/v1/dashboard"
+      dashboard: "/api/v1/dashboard",
+      testimonials: "/api/v1/testimonials"
     }
   }));
 
@@ -66,6 +68,7 @@
   apiV1.route("/inquiries", inquiriesRoutes);
   apiV1.route("/settings", settingsRoutes);
   apiV1.route("/dashboard", dashboardRoutes);
+  apiV1.route("/testimonials", testimonialsRoutes);
 
   // ✅ Mount apiV1 under /api/v1 on main app
   app.route("/api/v1", apiV1);

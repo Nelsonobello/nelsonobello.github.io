@@ -175,6 +175,21 @@ model CBTPracticeSession {
   startedAt    DateTime    @default(now())
   completedAt  DateTime?
 }
+
+// ─────────────────────────────────────────────
+// TESTIMONIALS
+// ─────────────────────────────────────────────
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  name      String
+  company   String?
+  quote     String
+  imageUrl  String?
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 // ─────────────────────────────────────────────
 // LEAD CAPTURE
 // ─────────────────────────────────────────────
