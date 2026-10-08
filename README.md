@@ -1,4 +1,4 @@
-# NELBELL Backend
+# NELBELL Backend 
 
 Node + Hono + Prisma + PostgreSQL (Supabase). Separate service from the
 Next.js frontend — its own repo, its own deploy, its own URL.
